@@ -5,6 +5,7 @@ using MonoTouch.Foundation;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using MonoTouch.CoreLocation;
 
 namespace XamarinStore
 {
@@ -25,6 +26,7 @@ namespace XamarinStore
 		public readonly AutoCompleteTextEntry CountryField;
 		BottomButtonView BottomView;
 		List<UITableViewCell> Cells = new List<UITableViewCell> ();
+		LocationManager locationManger = new LocationManager();
 
 		public ShippingAddressViewController (User user)
 		{
@@ -129,6 +131,17 @@ namespace XamarinStore
 			base.ViewWillAppear (animated);
 		}
 
+        public override void ViewDidLoad ()
+        {
+            base.ViewDidLoad ();
+            locationManger.StartLocationUpdates ();
+            locationManger.LocationUpdated += (object sender, LocationUpdatedEventArgs e) => {
+                CountryField.Value = e.PlaceMark.Country;
+                CityField.Value = e.PlaceMark.AddressDictionary.ValueForKey(new NSString("City")).ToString();
+
+            };
+        }
+
 		async void GetCountries ()
 		{
 			var countries = await WebService.Shared.GetCountries ();
@@ -182,6 +195,86 @@ namespace XamarinStore
 				tableView.DeselectRow (indexPath, true);
 			}
 		}
+
+        public class LocationManager
+        {
+            private CLGeocoder clg;
+
+            // event for the location changing
+            public event EventHandler<LocationUpdatedEventArgs> LocationUpdated = delegate { };
+
+            public LocationManager ()
+            {
+                this.locMgr = new CLLocationManager();
+                clg = new CLGeocoder();
+            }
+
+            // create a location manager to get system location updates to the application
+            public CLLocationManager LocMgr
+            {
+                get { 
+                    return this.locMgr; 
+                } 
+            }
+
+            protected CLLocationManager locMgr; 
+
+            public void StartLocationUpdates ()
+            {
+                if (CLLocationManager.LocationServicesEnabled) {
+
+                    LocMgr.DesiredAccuracy = 1; // sets the accuracy that we want in meters
+
+                    LocMgr.LocationsUpdated += (object sender, CLLocationsUpdatedEventArgs e) =>
+                    {
+                        // fire our custom Location Updated event
+                        CLLocation location = e.Locations [e.Locations.Length - 1];
+                        clg.ReverseGeocodeLocation (location, HandleCLGeocodeCompletionHandler);
+                        LocMgr.StopUpdatingLocation();
+                    };
+
+                    // Start our location updates
+                    LocMgr.StartUpdatingLocation ();
+
+                    // Get some output from our manager in case of failure
+                    LocMgr.Failed += (object sender, NSErrorEventArgs e) => {
+                        Console.WriteLine (e.Error);
+                    }; 
+
+                } 
+            }
+
+            void HandleCLGeocodeCompletionHandler (CLPlacemark[] placemarks, NSError error)
+            {
+                try 
+                {
+                    var placeMark = placemarks [0];
+                    Console.WriteLine(placeMark);
+                    LocationUpdated (this, new LocationUpdatedEventArgs (placeMark));
+
+                } 
+                catch (Exception ex) 
+                {
+                    var erroralert = new UIAlertView ("Location could not be found", "", null, "Ok", null);
+                    erroralert.Show ();
+                }
+            }
+        }
+
+        public class LocationUpdatedEventArgs : EventArgs
+        {
+            CLPlacemark placeMark;
+
+            public LocationUpdatedEventArgs(CLPlacemark placeMark)
+            {
+                this.placeMark = placeMark;
+            }
+
+            public CLPlacemark PlaceMark
+            {
+                get { return placeMark; }
+            }
+        }
 	}
 }
 
